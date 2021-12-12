@@ -19,50 +19,8 @@ pipeline {
         stage('Initialize') {
 			  steps{
 				//cleanWs()
-                checkout([$class: 'SubversionSCM', additionalCredentials: [], excludedCommitMessages: '', excludedRegions: '', excludedRevprop: '', excludedUsers: '', filterChangelog: false, ignoreDirPropChanges: false, includedRegions: '', locations: [[cancelProcessOnExternalsFail: true, credentialsId: '25c28440-cff2-42c5-9211-7cdc3415d0e0', depthOption: 'infinity', ignoreExternalsOption: true, local: '.', remote: CommonParams.urlsvn + '/branches/devops']], quietOperation: false, workspaceUpdater: [$class: 'UpdateUpdater']])
-                echo "Issue type: ${params.Tipo}"
-				withCredentials([usernamePassword(credentialsId: 'svn', passwordVariable: 'PASSW_SVN', usernameVariable: 'USER_SVN')]) {	
-					script {
-						def now = new Date().format("yyyyMMddHHmm")
-						def last_tag = sh(returnStdout: true, script: "svn list " + CommonParams.urlsvn + "/tags --username ${USER_SVN} --password ${PASSW_SVN} --no-auth-cache | grep _ | sort -V | tail -1") // obtiene el ultimo tag      
-						last_tag = strNormalize(last_tag)
-						echo "Last tag => ${last_tag}" 
-						if(last_tag.isEmpty()) {
-							newrevisionshort = "01.00.00"
-							newrevision = "${newrevisionshort}_${now}"				
-						} else {
-							revisiones = last_tag.tokenize('_')
-							tag = revisiones[0].tokenize('.')
-							if (params.Tipo == "Incidencia") {
-								tag[2] = tag[2].toInteger() + 1
-								tag[2] = strPad(tag[2])
-							}
-							if (params.Tipo == "Evolutivo") {
-								tag[1] = tag[1].toInteger() + 1
-								tag[1] = strPad(tag[1])
-								tag[2] = strPad(0)
-							}
-							if (params.Tipo == "Proyecto") {
-								tag[0] = tag[0].toInteger() + 1
-								tag[0] = strPad(tag[0])
-								tag[1] = strPad(0)
-								tag[2] = strPad(0)
-						}  
-						newrevisionshort = "${tag[0]}.${tag[1]}.${tag[2]}"
-						newrevision = "${newrevisionshort}_${now}"					
-					  }
-					  echo "New candidate ${newrevision}" 
-					}
-				}
-				sh "mvn --version"				
-				script {
-				    preinstall=0
-					def exists = fileExists '/opt/JENKINSMASTER/jenkins/workspace/repository/es/enagas/intpred/services/intpred-model-service-meteologica'
-					if (!exists) {
-						sh "mvn clean install -Ddisable.tests=true -DskipTests=true -Dmaven.test.skip=true"
-						preinstall=1
-					}
-				}
+                 		LAST_TAG = sh (label: 'Obteniendo ultimo tag', returnStdout: true, script: 'git describe --abbrev=0 --tags').trim()
+  				echo "Last TAG: ${LAST_TAG}"
            }        
         }
 
