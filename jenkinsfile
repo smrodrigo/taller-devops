@@ -19,7 +19,7 @@ pipeline {
         stage('Initialize') {
 			  steps{
 				cleanWs()
-                 		LAST_TAG = sh (label: 'Obteniendo ultimo tag', returnStdout: true, script: 'git tag --list').trim()
+                LAST_TAG = sh (label: 'Obteniendo ultimo tag', returnStdout: true, script: 'git tag --list').trim()
   				echo "Last TAG: ${LAST_TAG}"
            }        
         }
@@ -33,32 +33,27 @@ pipeline {
 		
 		stage('Build & Static Analysis & Quality Gates') {
           steps{
-                parallel(install: {
-                    script {
-    					if(!preinstall) {
-    					    sh 'mvn install -Ddisable.tests=true -DskipTests=true -Dmaven.test.skip=true'
-    					}
-                    }
-                }, sonar: {
-                    node('scanner'){
-                        withSonarQubeEnv('Sonarqube 7.6'){
-                            withEnv(["JAVA_HOME=${env.JAVA_HOME_SLAVE}", "PATH+MAVEN=${env.JAVA_HOME_SLAVE}/bin:${env.JAVA_HOME}/bin"]) {
-                    	        sh "${env.MAVEN_SLAVE}/mvn sonar:sonar"
-                            }
-                        }
-						timeout(time: 1, unit: "HOURS") {
-							waitForQualityGate abortPipeline: false
-						}
-					}
-                })
+               // parallel(install: {
+               //     script {
+    			//		if(!preinstall) {
+    				//	    sh 'mvn install -Ddisable.tests=true -DskipTests=true -Dmaven.test.skip=true'
+    			//		}
+                 //   }
+                //}, sonar: {
+                //    node('scanner'){
+                //        withSonarQubeEnv('Sonarqube 7.6'){
+                //            withEnv(["JAVA_HOME=${env.JAVA_HOME_SLAVE}", "PATH+MAVEN=${env.JAVA_HOME_SLAVE}/bin:${env.JAVA_HOME}/bin"]) {
+                //    	        sh "${env.MAVEN_SLAVE}/mvn sonar:sonar"
+                //            }
+                //        }
+				//		timeout(time: 1, unit: "HOURS") {
+				//			waitForQualityGate abortPipeline: false
+				//		}
+				//	}
+                //})
             
            }        
-        }
-		
-
-
-		
-        
+        }        
     } //Stages
 	
     post { 
@@ -70,16 +65,7 @@ pipeline {
 		}
         //success { sendEmail('SUCCESS', '&#10004') }
         failure { 
-				withCredentials([usernamePassword(credentialsId: 'svn', passwordVariable: 'PASSW_SVN', usernameVariable: 'USER_SVN')]) {
-					script{
-						def tag_exist = sh(returnStatus: true, script: "svn list " + CommonParams.urlsvn + "/candidate --username ${USER_SVN} --password ${PASSW_SVN} --no-auth-cache | grep ${newrevision}")      
-						if (!tag_exist){
-							sh(returnStdout: true, script: "svn delete " + CommonParams.urlsvn + "/candidate/${newrevision} -m 'Deleting candidate ${newrevision}' --username ${USER_SVN} --password ${PASSW_SVN} --no-auth-cache --force --quiet")
-						}
-						sh("${env.JFROG}/jfrog rt del predictores-snapshot/${newrevision} --quiet=true --server-id=ENAGAS")
-					}
-				}
-				//sendEmail('FAILURE', '&#10008') 
+			echo "TODO" 
 		}
         //unstable { sendEmail('UNSTABLE', '&#10008') }
     }  // post
@@ -95,8 +81,7 @@ def sendEmail(status, symbol) {
     from: 'Enagas', mimeType: 'text/html', replyTo: '', 
     subject: "${status} CI: PREDICTORES - Job ${env.JOB_NAME}",
     charset: 'UTF-8',
-    body:   "<img width=200 height=100 src='https://www.enagas.es/WEBCORP-static/maqueta/css/img/spr-s3b86d153e4.png'></img><br>" +
-            "<h2><b>Despligue</b></h2> <br>" + 
+    body:   "<h2><b>Despligue</b></h2> <br>" + 
             "<strong>Apps desplegadas:</strong> values.join(" - ") <br>" +
             "<strong>Version:</strong> ${newrevision}<br>" +
             "<strong>Job Jenkins:</strong> ${env.JOB_NAME} <br>" +
