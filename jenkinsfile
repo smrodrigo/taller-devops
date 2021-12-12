@@ -83,7 +83,7 @@ pipeline {
                     }
                 }, sonar: {
                     node('scanner'){
-                        withSonarQubeEnv('Sonarqube 6.7'){
+                        withSonarQubeEnv('Sonarqube 7.6'){
                             withEnv(["JAVA_HOME=${env.JAVA_HOME_SLAVE}", "PATH+MAVEN=${env.JAVA_HOME_SLAVE}/bin:${env.JAVA_HOME}/bin"]) {
                     	        sh "${env.MAVEN_SLAVE}/mvn sonar:sonar"
                             }
@@ -97,57 +97,10 @@ pipeline {
            }        
         }
 		
-        stage('Artifact Upload') {
-          steps{
-            script{
-                rp = sh(returnStdout: true, script:"${env.JFROG}/jfrog rt u --spec=./utils/upload_spec.json --spec-vars='revision=${newrevision}' --threads=2 --server-id=ENAGAS").trim()
-                def rpList = readJSON text: rp;
-                    if (rpList.status != 'success') {
-                        error('[FAILURE] Failed to deploy')
-                        currentBuild.result = 'FAILURE'
-                    }
-            }
-          }
-        } 
 
-		stage('Create svn candidate') {
-			steps {
-				withCredentials([usernamePassword(credentialsId: 'svn', passwordVariable: 'PASSW_SVN', usernameVariable: 'USER_SVN')]) {
-					sh(returnStdout: true, script: "svn copy " + CommonParams.urlsvn + "/trunk " + CommonParams.urlsvn + "/candidate/${newrevision} -m 'Candidate version ${newrevision}' --username ${USER_SVN} --password ${PASSW_SVN} --no-auth-cache")
-				}
-			}
-		}
+
 		
-        stage('Deploy') {
-          steps {
-            script {
-				def rp = ""
-				values = params.Deploy.tokenize(',')
-            	def appprops = readJSON encoding: 'utf-8', file: './utils/properties.json'
-				appprops = appprops["DES"]
-				withCredentials([usernamePassword(credentialsId: 'weblogic', passwordVariable: 'WL_PASSW', usernameVariable: 'WL_USER')]) {
-					values.each { item ->
-						if(appprops.containsKey(item)) {
-							echo "Deploying... ${item}  --->  " + appprops[item].name
-							def source = "${env.WORKSPACE}" + appprops[item].source
-							sh(returnStdout: true, script:"java -cp ${env.WEBLOGIC_JAR} weblogic.Deployer -adminurl t3://" + appprops[item].host + ":" + appprops[item].port + " -user ${WL_USER} -password ${WL_PASSW} -remote -noexit -name " + appprops[item].name + " -targets " + appprops[item].targets + " -undeploy").trim()
-							rp = sh(returnStdout: true, script:"java -cp ${env.WEBLOGIC_JAR} weblogic.Deployer -adminurl t3://" + appprops[item].host + ":" + appprops[item].port + " -user ${WL_USER} -password ${WL_PASSW} -stage -remote -upload -name " + appprops[item].name + " -source ${source} -targets " + appprops[item].targets + " -usenonexclusivelock -deploy").trim()
-							if(!rp.contains("Target state: deploy completed")) {
-								error('[FAILURE] Failed to deploy')
-								currentBuild.result = 'FAILURE'
-							}
-							else {
-								echo "Deploy ${item}  -  " + appprops[item].name + " success"
-							}							
-						}
-						else {
-							echo "No existe " + item
-						}
-					}
-				}
-            }
-          }
-        }
+        
     } //Stages
 	
     post { 
