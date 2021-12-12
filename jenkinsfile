@@ -17,22 +17,25 @@ pipeline {
     }
     stages {
         stage('Initialize') {
-			  steps{
+		steps{
+			script {
 				cleanWs()
-                LAST_TAG = sh (label: 'Obteniendo ultimo tag', returnStdout: true, script: 'git tag --list').trim()
+                		LAST_TAG = sh (label: 'Obteniendo ultimo tag', returnStdout: true, script: 'git tag --list').trim()
   				echo "Last TAG: ${LAST_TAG}"
-           }        
+			}
+           	}        
         }
 
         stage('Unit Test') {
             steps{
-				echo "TODO"
-				//sh 'mvn clean test'
+		echo "TODO"
+		//sh 'mvn clean test'
            }        
         }
 		
-		stage('Build & Static Analysis & Quality Gates') {
+	stage('Build & Static Analysis & Quality Gates') {
           steps{
+		  echo "TODO"
                // parallel(install: {
                //     script {
     			//		if(!preinstall) {
