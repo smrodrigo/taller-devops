@@ -18,8 +18,8 @@ pipeline {
     stages {
         stage('Initialize') {
 			  steps{
-				//cleanWs()
-                 		LAST_TAG = sh (label: 'Obteniendo ultimo tag', returnStdout: true, script: 'git describe --abbrev=0 --tags').trim()
+				cleanWs()
+                 		LAST_TAG = sh (label: 'Obteniendo ultimo tag', returnStdout: true, script: 'git tag --list').trim()
   				echo "Last TAG: ${LAST_TAG}"
            }        
         }
