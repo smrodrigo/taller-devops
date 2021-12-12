@@ -1,0 +1,207 @@
+#!/usr/bin/env groovy
+
+def values = []
+def newrevisionshort
+def newrevision
+def preinstall
+
+class CommonParams {
+    static String urlsvn='http://localhost'
+}
+
+pipeline {
+    agent any
+	tools { 
+        maven 'Maven 2.2.1'
+        jdk 'JDK 7u80'
+    }
+    stages {
+        stage('Initialize') {
+			  steps{
+				//cleanWs()
+                checkout([$class: 'SubversionSCM', additionalCredentials: [], excludedCommitMessages: '', excludedRegions: '', excludedRevprop: '', excludedUsers: '', filterChangelog: false, ignoreDirPropChanges: false, includedRegions: '', locations: [[cancelProcessOnExternalsFail: true, credentialsId: '25c28440-cff2-42c5-9211-7cdc3415d0e0', depthOption: 'infinity', ignoreExternalsOption: true, local: '.', remote: CommonParams.urlsvn + '/branches/devops']], quietOperation: false, workspaceUpdater: [$class: 'UpdateUpdater']])
+                echo "Issue type: ${params.Tipo}"
+				withCredentials([usernamePassword(credentialsId: 'svn', passwordVariable: 'PASSW_SVN', usernameVariable: 'USER_SVN')]) {	
+					script {
+						def now = new Date().format("yyyyMMddHHmm")
+						def last_tag = sh(returnStdout: true, script: "svn list " + CommonParams.urlsvn + "/tags --username ${USER_SVN} --password ${PASSW_SVN} --no-auth-cache | grep _ | sort -V | tail -1") // obtiene el ultimo tag      
+						last_tag = strNormalize(last_tag)
+						echo "Last tag => ${last_tag}" 
+						if(last_tag.isEmpty()) {
+							newrevisionshort = "01.00.00"
+							newrevision = "${newrevisionshort}_${now}"				
+						} else {
+							revisiones = last_tag.tokenize('_')
+							tag = revisiones[0].tokenize('.')
+							if (params.Tipo == "Incidencia") {
+								tag[2] = tag[2].toInteger() + 1
+								tag[2] = strPad(tag[2])
+							}
+							if (params.Tipo == "Evolutivo") {
+								tag[1] = tag[1].toInteger() + 1
+								tag[1] = strPad(tag[1])
+								tag[2] = strPad(0)
+							}
+							if (params.Tipo == "Proyecto") {
+								tag[0] = tag[0].toInteger() + 1
+								tag[0] = strPad(tag[0])
+								tag[1] = strPad(0)
+								tag[2] = strPad(0)
+						}  
+						newrevisionshort = "${tag[0]}.${tag[1]}.${tag[2]}"
+						newrevision = "${newrevisionshort}_${now}"					
+					  }
+					  echo "New candidate ${newrevision}" 
+					}
+				}
+				sh "mvn --version"				
+				script {
+				    preinstall=0
+					def exists = fileExists '/opt/JENKINSMASTER/jenkins/workspace/repository/es/enagas/intpred/services/intpred-model-service-meteologica'
+					if (!exists) {
+						sh "mvn clean install -Ddisable.tests=true -DskipTests=true -Dmaven.test.skip=true"
+						preinstall=1
+					}
+				}
+           }        
+        }
+
+        stage('Unit Test') {
+            steps{
+				echo "TODO"
+				//sh 'mvn clean test'
+           }        
+        }
+		
+		stage('Build & Static Analysis & Quality Gates') {
+          steps{
+                parallel(install: {
+                    script {
+    					if(!preinstall) {
+    					    sh 'mvn install -Ddisable.tests=true -DskipTests=true -Dmaven.test.skip=true'
+    					}
+                    }
+                }, sonar: {
+                    node('scanner'){
+                        withSonarQubeEnv('Sonarqube 6.7'){
+                            withEnv(["JAVA_HOME=${env.JAVA_HOME_SLAVE}", "PATH+MAVEN=${env.JAVA_HOME_SLAVE}/bin:${env.JAVA_HOME}/bin"]) {
+                    	        sh "${env.MAVEN_SLAVE}/mvn sonar:sonar"
+                            }
+                        }
+						timeout(time: 1, unit: "HOURS") {
+							waitForQualityGate abortPipeline: false
+						}
+					}
+                })
+            
+           }        
+        }
+		
+        stage('Artifact Upload') {
+          steps{
+            script{
+                rp = sh(returnStdout: true, script:"${env.JFROG}/jfrog rt u --spec=./utils/upload_spec.json --spec-vars='revision=${newrevision}' --threads=2 --server-id=ENAGAS").trim()
+                def rpList = readJSON text: rp;
+                    if (rpList.status != 'success') {
+                        error('[FAILURE] Failed to deploy')
+                        currentBuild.result = 'FAILURE'
+                    }
+            }
+          }
+        } 
+
+		stage('Create svn candidate') {
+			steps {
+				withCredentials([usernamePassword(credentialsId: 'svn', passwordVariable: 'PASSW_SVN', usernameVariable: 'USER_SVN')]) {
+					sh(returnStdout: true, script: "svn copy " + CommonParams.urlsvn + "/trunk " + CommonParams.urlsvn + "/candidate/${newrevision} -m 'Candidate version ${newrevision}' --username ${USER_SVN} --password ${PASSW_SVN} --no-auth-cache")
+				}
+			}
+		}
+		
+        stage('Deploy') {
+          steps {
+            script {
+				def rp = ""
+				values = params.Deploy.tokenize(',')
+            	def appprops = readJSON encoding: 'utf-8', file: './utils/properties.json'
+				appprops = appprops["DES"]
+				withCredentials([usernamePassword(credentialsId: 'weblogic', passwordVariable: 'WL_PASSW', usernameVariable: 'WL_USER')]) {
+					values.each { item ->
+						if(appprops.containsKey(item)) {
+							echo "Deploying... ${item}  --->  " + appprops[item].name
+							def source = "${env.WORKSPACE}" + appprops[item].source
+							sh(returnStdout: true, script:"java -cp ${env.WEBLOGIC_JAR} weblogic.Deployer -adminurl t3://" + appprops[item].host + ":" + appprops[item].port + " -user ${WL_USER} -password ${WL_PASSW} -remote -noexit -name " + appprops[item].name + " -targets " + appprops[item].targets + " -undeploy").trim()
+							rp = sh(returnStdout: true, script:"java -cp ${env.WEBLOGIC_JAR} weblogic.Deployer -adminurl t3://" + appprops[item].host + ":" + appprops[item].port + " -user ${WL_USER} -password ${WL_PASSW} -stage -remote -upload -name " + appprops[item].name + " -source ${source} -targets " + appprops[item].targets + " -usenonexclusivelock -deploy").trim()
+							if(!rp.contains("Target state: deploy completed")) {
+								error('[FAILURE] Failed to deploy')
+								currentBuild.result = 'FAILURE'
+							}
+							else {
+								echo "Deploy ${item}  -  " + appprops[item].name + " success"
+							}							
+						}
+						else {
+							echo "No existe " + item
+						}
+					}
+				}
+            }
+          }
+        }
+    } //Stages
+	
+    post { 
+		always { 
+		    echo "TODO" 
+			//junit 'build/reports/**/*.xml'
+		    //sh "mkdir -p reports"
+		    //publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: 'reports', reportFiles: 'index.html', reportName: 'HTML Report', reportTitles: ''])
+		}
+        //success { sendEmail('SUCCESS', '&#10004') }
+        failure { 
+				withCredentials([usernamePassword(credentialsId: 'svn', passwordVariable: 'PASSW_SVN', usernameVariable: 'USER_SVN')]) {
+					script{
+						def tag_exist = sh(returnStatus: true, script: "svn list " + CommonParams.urlsvn + "/candidate --username ${USER_SVN} --password ${PASSW_SVN} --no-auth-cache | grep ${newrevision}")      
+						if (!tag_exist){
+							sh(returnStdout: true, script: "svn delete " + CommonParams.urlsvn + "/candidate/${newrevision} -m 'Deleting candidate ${newrevision}' --username ${USER_SVN} --password ${PASSW_SVN} --no-auth-cache --force --quiet")
+						}
+						sh("${env.JFROG}/jfrog rt del predictores-snapshot/${newrevision} --quiet=true --server-id=ENAGAS")
+					}
+				}
+				//sendEmail('FAILURE', '&#10008') 
+		}
+        //unstable { sendEmail('UNSTABLE', '&#10008') }
+    }  // post
+} //Pipeline
+
+
+@NonCPS
+def sendEmail(status, symbol) {
+
+    mail to: 'ralbitre@enagas.es',	 
+    cc: '',
+	bcc: '',
+    from: 'Enagas', mimeType: 'text/html', replyTo: '', 
+    subject: "${status} CI: PREDICTORES - Job ${env.JOB_NAME}",
+    charset: 'UTF-8',
+    body:   "<img width=200 height=100 src='https://www.enagas.es/WEBCORP-static/maqueta/css/img/spr-s3b86d153e4.png'></img><br>" +
+            "<h2><b>Despligue</b></h2> <br>" + 
+            "<strong>Apps desplegadas:</strong> values.join(" - ") <br>" +
+            "<strong>Version:</strong> ${newrevision}<br>" +
+            "<strong>Job Jenkins:</strong> ${env.JOB_NAME} <br>" +
+            "<strong>Build Number:</strong> ${env.BUILD_NUMBER} <br>" +
+            "<strong>Tiempo total job jenkins:</strong> ${(System.currentTimeMillis() - currentBuild.startTimeInMillis)/1000} segundos<br>" +
+            "<strong>Resultado:</strong> ${status}  ${symbol}<br>" +
+            "<p>&#9758 <a href='${env.BUILD_URL}'>Acceda al detalle de la tarea</a><br>"; 
+}
+
+def strNormalize(str) {
+     return str.replace("/", "")     
+}
+
+def strPad(num) {
+     if(num < 10) {
+         return "0" + num
+     }
+     return num     
+}
