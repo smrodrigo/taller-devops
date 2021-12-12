@@ -20,7 +20,7 @@ pipeline {
 		steps{
 			script {
 				//cleanWs()
-                		LAST_TAG = sh (label: 'Obteniendo ultimo tag', returnStdout: true, script: 'git tag --list').trim()
+                		LAST_TAG = sh (label: 'Obteniendo ultimo tag', returnStdout: true, script: 'git describe --abbrev=0 --tags').trim()
   				echo "Last TAG: ${LAST_TAG}"
 			}
            	}        
