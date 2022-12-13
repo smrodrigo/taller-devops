@@ -27,12 +27,18 @@ jobs:
         java-version: '11'
         distribution: 'temurin'
         cache: maven
-    - name: Build with Maven
-      run: mvn install -Ddisable.tests=true -DskipTests=true -Dmaven.test.skip=true --file pom.xml
-    - run: mkdir staging && cp target/*.jar staging
-    - uses: actions/upload-artifact@v3
-      with:
-        name: Package
-        path: staging
+    #- name: Build with Maven
+    #  run: mvn install -Ddisable.tests=true -DskipTests=true -Dmaven.test.skip=true --file pom.xml
+    #- run: mkdir staging && cp target/*.jar staging
+    #- uses: actions/upload-artifact@v3
+    #  with:
+    #    name: Package
+    #    path: staging
     # Optional: Uploads the full dependency graph to GitHub to improve the quality of Dependabot alerts this repository can receive
-
+    - name: View settings.xml
+      run: cat /home/runner/.m2/settings.xml
+    - name: Maven Release
+      run: mvn release:prepare release:perform -B -s .maven_settings.xml -DreleaseVersion=${{ github.event.inputs.releaseVersion }} -DdevelopmentVersion=${{ github.event.inputs.developmentVersion }}
+      env:
+          CI_DEPLOY_USERNAME: smerlosr
+          CI_DEPLOY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
