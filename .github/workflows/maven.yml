@@ -37,8 +37,18 @@ jobs:
     # Optional: Uploads the full dependency graph to GitHub to improve the quality of Dependabot alerts this repository can receive
     - name: View settings.xml
       run: cat /home/runner/.m2/settings.xml
+      
+    - name: Get branch names
+      id: branch-name
+      uses: tj-actions/branch-names@v6
+
+    - name: Get the current tag
+      if: steps.branch-name.outputs.is_tag == 'true'  # Replaces: startsWith(github.ref, 'refs/tags/')
+      run: |
+        echo "Echo current tag: ${{ steps.branch-name.outputs.tag }}"
+      # Outputs: "v0.0.1" OR "0.0.1"       
     - name: Maven Release
-      run: mvn release:prepare release:perform -B -s .maven_settings.xml -DreleaseVersion=${{ github.event.inputs.releaseVersion }} -DdevelopmentVersion=${{ github.event.inputs.developmentVersion }}
+      run: mvn release:prepare release:perform -B -s  -DreleaseVersion=${{ steps.branch-name.outputs.tag }}
       env:
           CI_DEPLOY_USERNAME: smerlosr
           CI_DEPLOY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
